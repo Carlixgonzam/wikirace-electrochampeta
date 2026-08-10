@@ -1,7 +1,7 @@
 # player
 
 Your starting point. This is a real OTP app: it compiles, connects to the
-platform node, and declares the `WikiRace.Crawler` behaviour, but doesn't
+platform node, and declares the `WikiRace.Crawler` behavior, but doesn't
 implement it yet. `lib/player/crawler.ex`'s `start/2` and `status/1` both
 raise `"TODO"`.
 
