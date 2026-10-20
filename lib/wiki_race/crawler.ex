@@ -35,9 +35,10 @@ defmodule WikiRace.Crawler do
 
       WikiRace.Harness.report([start_url, ..., target_url])
 
-  The harness records the time the report arrives. That time is your time in the
-  score. Report a path as soon as you have one. If you find a shorter path later,
-  report it too.
+  The harness records the time each report arrives. The crawler whose first valid
+  path arrives first gets a bonus in the score. The arrival time of your shortest
+  path is your time. Report a path as soon as you have one. If you find a shorter
+  path later, report it too.
 
   Also set `path` and `state: :found` in your `c:status/1` result. The harness
   treats that status as a report too, so it must hold the same path.

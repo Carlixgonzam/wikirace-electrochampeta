@@ -1,8 +1,8 @@
 # Player
 
-This is your starting point. It is an OTP application that compiles and runs, but it has
-no crawler yet. `start/2` and `status/1` in `lib/player/crawler.ex` raise an error until
-you write them.
+This folder is your starting point. It is an OTP application that compiles and runs,
+but it has no crawler yet. `start/2` and `status/1` in `lib/player/crawler.ex` raise an
+error until you write them.
 
 ## What to implement
 
@@ -13,13 +13,13 @@ you write them.
 2. `status/1` in the same module. It receives the pid returned by `start/2` and returns a
    `WikiRace.Status`. The harness calls it every 250 ms and waits at most 250 ms for the
    answer. It must never block.
-3. Call `WikiRace.Harness.report/1` as soon as you find a path. You can call it again if
-   you find a shorter one.
+3. Call `WikiRace.Harness.report/1` as soon as you find a path. The first valid path to
+   arrive gets extra points. If you find a shorter path later, call it again.
 4. Add your supervisors to the `children` list in `lib/player/application.ex`. The list
    starts empty.
 
 The contract is in `lib/wiki_race/`: `crawler.ex`, `status.ex` and `harness.ex`. Read
-these files, but do not change them. Your release must include them as they are.
+these files, but do not change them. Your crawler must ship them as they are.
 
 ## Rules
 
@@ -33,10 +33,9 @@ these files, but do not change them. Your release must include them as they are.
 
 ## Paths
 
-An article URL has the form `BASE/content/BOOK/Title`, with `_` instead of spaces. For
-example, `http://kiwix1:8080/content/wikipedia_en_all_nopic/Tiger`. The two URLs that
-`start/2` receives have this form. Links inside a page are relative. Resolve them against
-the URL of the page.
+An article URL looks like `http://kiwix1:8080/content/wikipedia_en_all_nopic/Tiger`, with
+`_` instead of spaces in the title. The two URLs that `start/2` receives look like this.
+Links inside a page are relative. Turn them into full URLs using the URL of the page.
 
 A path is the list of article URLs from the start article to the target, both included.
 The harness checks every path you report. Each article must link to the next one, and no
@@ -50,10 +49,10 @@ A race lasts 120 seconds. `../SCORING.md` explains the score.
 live pid and that `status/1` returns a `WikiRace.Status`. It fails until you implement
 both. It is not graded.
 
-To run a full race on your machine, follow the repo root `README.md` and `RUNNING.md`.
-The `player1` and `player2` containers both run this folder. After you change `lib/`,
-restart them with `docker compose restart player1 player2`.
+To run a full race on your PC, follow `../RUNNING.md`. The `player1` and `player2`
+containers both run this folder. After you change `lib/`, restart them with
+`docker compose restart player1 player2`.
 
 ## Delivery
 
-You must hand out your implementation of this player.
+You must hand in your implementation of this player.
