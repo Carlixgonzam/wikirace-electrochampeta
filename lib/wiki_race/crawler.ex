@@ -1,10 +1,9 @@
 defmodule WikiRace.Crawler do
   @moduledoc """
-  The contract every group's crawler must implement.
+  The contract every crawler implements.
 
-  This is the entire surface the competition harness touches. Implement it in
-  your own OTP application and the harness can deploy, start, observe and score
-  your crawler without knowing anything else about your design.
+  The harness only uses the two callbacks below. It starts your crawler with
+  `c:start/2` and reads its progress with `c:status/1`.
 
       defmodule MyGroup.Crawler do
         @behaviour WikiRace.Crawler
@@ -23,66 +22,56 @@ defmodule WikiRace.Crawler do
 
   ## Lifecycle
 
-  The pid returned by `c:start/2` lives in **your** supervision tree. The
-  harness never supervises it. It only `Process.monitor/1`s the pid, so if your
-  crawler crashes the harness records a `:DOWN` and the race continues without
-  you. Designing that supervision tree is part of the assignment.
+  The pid returned by `c:start/2` must be supervised by **your** application. The
+  harness does not supervise it. It only monitors it with `Process.monitor/1`. If
+  your crawler crashes, the race goes on without you.
 
-  When the time limit expires the harness takes one final `c:status/1` snapshot
-  and then kills the pid outright. There is no shutdown callback and no
-  cooperative deadline to check, so do not rely on running any cleanup.
+  When the time limit ends, the harness calls `c:status/1` one last time and then
+  kills the pid. There is no shutdown callback, so do not rely on any cleanup code.
 
-  ## Finding a path
+  ## Reporting a path
 
-  `c:status/1` polling drives the dashboard, but it does **not** decide the
-  race. The moment you find a path, call `WikiRace.Harness.report/1`:
+  When you find a path, call `WikiRace.Harness.report/1`:
 
       WikiRace.Harness.report([start_url, ..., target_url])
 
-  The harness timestamps that message on arrival, and that timestamp is your
-  wall-clock result, the tiebreaker between crawlers that found paths of equal
-  length. Report as early as you can, then keep searching if you think you can
-  do better: later reports from the same node supersede earlier ones, so it is
-  safe to report a valid path immediately and improve on it.
+  The harness records the time the report arrives. That time is your time in the
+  score. Report a path as soon as you have one. If you find a shorter path later,
+  report it too.
 
-  Also set `path` and `state: :found` in your `c:status/1` snapshots, so a
-  missed report still shows up on the dashboard.
+  Also set `path` and `state: :found` in your `c:status/1` result. The harness
+  treats that status as a report too, so it must hold the same path.
 
   ## URLs
 
-  Both arguments to `c:start/2` are complete, fetchable URLs pointing at the
-  local Kiwix instance, so pass them straight to `Req.get/1`, no construction
-  needed. Never request `wikipedia.org`; the offline snapshot is the only
-  legal source, and hammering the public internet in parallel will get the
-  competition network blocked.
+  Both arguments to `c:start/2` are full Kiwix article URLs. Pass them to
+  `Req.get/1` as they are. Never request `wikipedia.org`.
 
-  Links you extract from a page with Floki will be relative. Resolve them
-  against the page you fetched them from, and stay inside the article
-  namespace. Kiwix serves search pages, category listings and static assets
-  from the same host, and following those wastes the race.
+  Links in a page are relative. Resolve them against the URL of that page. Follow
+  only article links. Kiwix also serves search pages and static files from the same
+  host, and fetching them wastes time.
   """
 
   @doc """
   Starts a crawl from `start_url` toward `target_url`.
 
-  Returns the pid of the process the harness should monitor and poll. That
-  process must be supervised by your own application. Return `{:error, reason}`
-  if the crawler cannot start at all; `reason` is shown on the dashboard.
+  Returns `{:ok, pid}`. The harness monitors that pid and passes it to
+  `c:status/1`. The process must be supervised by your application. Return
+  `{:error, reason}` if the crawler cannot start. The dashboard shows `reason`.
 
-  Both URLs are absolute Kiwix article URLs. This is called once per race, and
-  it must return promptly, so start your workers and return, don't crawl inline.
+  The harness calls this once per race and waits at most 15 seconds. Start your
+  processes and return. Do not crawl inside this function.
   """
   @callback start(start_url :: String.t(), target_url :: String.t()) ::
               {:ok, pid()} | {:error, term()}
 
   @doc """
-  Returns a snapshot of the crawl's current progress.
+  Returns the current progress of the crawl.
 
-  Polled frequently (roughly every 250ms) for the whole race, on the harness's
-  schedule. Keep it cheap and non-blocking: read from ETS or from a GenServer
-  that isn't also doing the crawling. If this call blocks or times out the
-  dashboard goes blank, and if it blocks past the time limit you lose the final
-  snapshot that would have been scored.
+  The harness calls this every 250 ms during the race and waits at most 250 ms for
+  the answer. It must not block. Read the data from ETS, or from a process that is
+  not doing the crawling. If the call does not answer in time, the dashboard shows
+  nothing for that poll.
   """
   @callback status(pid :: pid()) :: WikiRace.Status.t()
 end

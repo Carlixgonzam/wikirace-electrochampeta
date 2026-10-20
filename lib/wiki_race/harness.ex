@@ -1,32 +1,28 @@
 defmodule WikiRace.Harness do
   @moduledoc """
-  Client for reporting results back to the competition harness.
+  Sends results to the harness.
 
-  This module ships with the platform and is the only way your crawler should
-  talk to the harness. It hides where the harness lives and how it is
-  addressed, so that addressing can change without breaking your code.
+  Always use this module to talk to the harness. Do not send messages to the
+  harness yourself. Its address may change, and this module hides it.
 
-  Call `report/1` from anywhere in your crawler, any process and any node in
-  your cluster, the instant you have a path.
+  You can call `report/1` from any process, on any of your nodes.
   """
 
   @registered_name :wiki_race_harness
 
   @doc """
-  Reports a completed path to the harness.
+  Reports a path to the harness.
 
-  `path` is the list of article URLs walked from the start article to the
-  target, including both endpoints.
+  `path` is the list of article URLs from the start article to the target, both
+  included.
 
-  Fire-and-forget: this returns `:ok` immediately and never blocks your crawl,
-  even if the harness is unreachable. The harness stamps the arrival time
-  against its own clock. Timestamps generated on your node are not comparable
-  to it, which is why this function deliberately doesn't send one.
+  Returns `:ok` at once and never blocks, even if the harness is down. The harness
+  records the arrival time with its own clock. The clock of your node is not used.
 
-  Reporting more than once is fine and expected: report a valid path as soon as
-  you have one, and report again if you find a shorter one. The harness keeps
-  the shortest path per node, with the arrival time of the report that
-  established it.
+  You can report more than once. Report a path as soon as you have one, and report
+  again if you find a shorter one. The harness keeps your shortest path, with the
+  arrival time of the report that sent it. If a reported path is wrong, your score
+  for the race is -1.0, even if another report is correct.
   """
   @spec report(WikiRace.Status.path()) :: :ok
   def report(path) when is_list(path) do
@@ -34,12 +30,10 @@ defmodule WikiRace.Harness do
   end
 
   @doc """
-  Tells the harness your crawler has exhausted its search without finding a
-  path.
+  Tells the harness that your crawler searched everything and found no path.
 
-  Optional, the race ends for you at the time limit regardless. Sending this
-  lets the dashboard show you as finished rather than still running, and lets a
-  race end early once both crawlers have settled.
+  Optional. Your race ends at the time limit anyway. With this call the dashboard
+  shows you as finished, and the race can end early once both crawlers are done.
   """
   @spec report_exhausted() :: :ok
   def report_exhausted do
@@ -47,10 +41,9 @@ defmodule WikiRace.Harness do
   end
 
   @doc """
-  The name the harness process is registered under, for debugging.
+  The name the harness is registered under.
 
-  You should not need this, use `report/1`. It is exposed so you can check
-  connectivity from a remote IEx session:
+  Use `report/1` instead. This is only for checking the connection from IEx:
 
       iex> :global.whereis_name(WikiRace.Harness.registered_name())
       #PID<12345.678.0>

@@ -1,7 +1,6 @@
-# Compose/dev tooling, not part of the crawler assignment: connects this
-# node to the platform node by explicit Node.connect/1, the same manual step
-# RUNNING.md's non-compose flow does by hand, just scripted and retried since
-# container start order isn't the same as "the platform's app has booted."
+# Used only by the local docker-compose setup. It is not part of the assignment.
+# It connects this node to the platform node with Node.connect/1. It retries for
+# 30 seconds, because the platform may still be starting.
 #
 # Invoked as: elixir --sname ... --cookie ... -S mix run --no-halt bin/connect.exs
 

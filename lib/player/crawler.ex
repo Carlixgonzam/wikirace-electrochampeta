@@ -1,11 +1,9 @@
 defmodule Player.Crawler do
   @moduledoc """
-  Where your crawler goes.
+  Your crawler.
 
-  This module already declares `@behaviour WikiRace.Crawler`, so it compiles
-  and the harness can discover it, but both callbacks just raise. Replace
-  them with a real implementation; see `WikiRace.Crawler`'s docs for the
-  contract and `player/README.md` for how to run the test that checks you did.
+  The harness calls `start/2` and `status/1` of this module. Both raise until you
+  implement them. `WikiRace.Crawler` describes what each one must do.
   """
 
   @behaviour WikiRace.Crawler

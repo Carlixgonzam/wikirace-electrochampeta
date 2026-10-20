@@ -18,9 +18,9 @@ defmodule Player.MixProject do
     ]
   end
 
-  # Only Req and Floki. This is the entire dependency surface a crawler is
-  # allowed to add to; everything else must be OTP: GenServer,
-  # DynamicSupervisor, ETS, Erlang distribution.
+  # Req and Floki are the only dependencies allowed. Do not add others.
+  # Everything else must use OTP: GenServer, DynamicSupervisor, ETS and
+  # Erlang distribution.
   defp deps do
     [
       {:req, "~> 0.5"},

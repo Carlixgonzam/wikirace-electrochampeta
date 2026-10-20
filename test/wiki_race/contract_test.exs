@@ -1,21 +1,20 @@
 defmodule Player.ContractTest do
   @moduledoc """
-  Fails until `Player.Crawler` implements `WikiRace.Crawler` for real.
+  Checks that `Player.Crawler` follows the `WikiRace.Crawler` contract.
 
-  This is the same check the harness performs on race day: `start/2` must
-  return a monitorable pid, and `status/1` must return a `WikiRace.Status`.
-  Nothing here is graded directly, it just tells you locally whether the
-  harness would be able to talk to your crawler at all.
+  `start/2` must return a live pid, and `status/1` must return a
+  `WikiRace.Status`. These tests fail until you implement both. They are not
+  graded.
   """
   use ExUnit.Case, async: true
 
   alias WikiRace.Status
 
-  # Same shape as the URLs the harness passes, against the default local Kiwix.
+  # URLs in the same form the harness passes to `start/2`.
   @start_url "http://localhost:8080/content/wikipedia_en_all_nopic/Chess"
   @target_url "http://localhost:8080/content/wikipedia_en_all_nopic/Bee"
 
-  test "start/2 returns a monitorable pid" do
+  test "start/2 returns a live pid" do
     assert {:ok, pid} = Player.Crawler.start(@start_url, @target_url)
 
     assert is_pid(pid)
