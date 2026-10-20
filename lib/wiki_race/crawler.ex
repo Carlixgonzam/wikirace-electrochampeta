@@ -24,7 +24,7 @@ defmodule WikiRace.Crawler do
   ## Lifecycle
 
   The pid returned by `c:start/2` lives in **your** supervision tree. The
-  harness never supervises it, It only `Process.monitor/1`s the pid, so if your
+  harness never supervises it. It only `Process.monitor/1`s the pid, so if your
   crawler crashes the harness records a `:DOWN` and the race continues without
   you. Designing that supervision tree is part of the assignment.
 

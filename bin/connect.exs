@@ -3,7 +3,7 @@
 # RUNNING.md's non-compose flow does by hand, just scripted and retried since
 # container start order isn't the same as "the platform's app has booted."
 #
-# Invoked as: elixir --name ... --cookie ... -S mix run --no-halt bin/connect.exs
+# Invoked as: elixir --sname ... --cookie ... -S mix run --no-halt bin/connect.exs
 
 platform_node = System.fetch_env!("PLATFORM_NODE") |> String.to_atom()
 

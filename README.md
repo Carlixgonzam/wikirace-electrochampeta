@@ -17,9 +17,9 @@ knob your crawler reads at runtime, not a second copy of the code.
    - `start/2` takes the start and target URLs, starts whatever process tree
      your search needs under your own supervision, and returns `{:ok, pid}`.
    - `status/1` takes that pid and returns a `WikiRace.Status.t()`. Keep it
-     cheap and non-blocking, it's polled roughly every 250ms.
+     cheap and non-blocking. It's polled roughly every 250ms.
    - See `lib/wiki_race/crawler.ex` and `lib/wiki_race/status.ex` for the full
-     contract, typespecs and docs. Nothing there needs to change; it's what
+     contract, typespecs and docs. Nothing there needs to change. It's what
      the harness calls verbatim.
 2. Call `WikiRace.Harness.report/1` (`lib/wiki_race/harness.ex`) the moment
    you have a path. This, not `status/1`, is what actually decides the race.
@@ -36,10 +36,44 @@ Only `req` (HTTP) and `floki` (HTML parsing) as external dependencies. See
 be standard OTP: `GenServer`, `DynamicSupervisor`, ETS, Erlang distribution.
 
 Both URLs `start/2` receives are absolute, fetchable Kiwix article URLs.
-Pass them straight to `Req.get/1`. Never request `wikipedia.org`; the offline
+Pass them straight to `Req.get/1`. Never request `wikipedia.org`. The offline
 snapshot is the only legal source.
 
 See `../SCORING.md` for how races are ranked and scored.
+
+## What the harness expects
+
+- **Article URLs.** An article URL has the form `BASE/content/BOOK/Title`,
+  with underscores for spaces. In the local setup that is, for example,
+  `http://kiwix1:8080/content/wikipedia_en_all_nopic/Tiger`. A reported path
+  is a list of such URLs, from the start article to the target, both
+  included.
+- **Path verification.** The harness fetches every page of a reported path
+  and checks that each article links to the next one. URLs are compared
+  after percent-decoding, so a query string, a fragment or a trailing `/`
+  makes no difference. A path that visits an article twice is rejected. A
+  rejected path scores a flat -1.0 (see `../SCORING.md`).
+- **Timing.** A tournament race lasts 120 seconds and `status/1` is polled
+  every 250ms. `start/2` is called with a 15 second timeout, and each
+  `status/1` call with a 250ms timeout. Both values are fixed in
+  `WikiRacePlatform.Tournament.Server` and `WikiRacePlatform.Race.Instance`.
+- **Exactly one crawler module.** The harness finds your crawler by scanning
+  the modules loaded on your node for `@behaviour WikiRace.Crawler`. If no
+  module declares it, or more than one does, the harness cannot pick your
+  crawler and the race does not start. Keep the behaviour on
+  `Player.Crawler`, or on the one module that replaces it.
+- **Keep `lib/wiki_race/`.** `WikiRace.Crawler`, `WikiRace.Status` and
+  `WikiRace.Harness` must ship with your release unchanged. The harness
+  reads `WikiRace.Status` structs from your node, and `WikiRace.Harness.report/1`
+  runs on your node.
+
+## Shipping your crawler
+
+The platform builds your deliverable from a tagged commit of your GitHub
+repository with `MIX_ENV=prod mix release`, with no other command. Check
+that this command succeeds on a fresh clone before you tag. Your release
+does not connect to the platform by itself. The platform starts it and
+connects to it. `bin/connect.exs` is not used on competition day.
 
 ## Local iteration
 
