@@ -1,8 +1,9 @@
 # Player
 
-This is your starting point. It is an OTP application that compiles and runs, but it has
-no crawler yet. `start/2` and `status/1` in `lib/player/crawler.ex` raise an error until
-you write them.
+Your starting point. This is a real OTP app: it compiles, connects to the
+platform node, and declares the `WikiRace.Crawler` behavior, but doesn't
+implement it yet. `lib/player/crawler.ex`'s `start/2` and `status/1` both
+raise `"TODO"`.
 
 ## What to implement
 
