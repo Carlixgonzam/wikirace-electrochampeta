@@ -10,7 +10,9 @@ defmodule Player.Application do
 
   @impl true
   def start(_type, _args) do
-    children = []
+    children = [
+      {DynamicSupervisor, name: Player.RaceSupervisor, strategy: :one_for_one}
+    ]
 
     Supervisor.start_link(children, strategy: :one_for_one, name: Player.Supervisor)
   end

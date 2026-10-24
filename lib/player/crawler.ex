@@ -9,12 +9,26 @@ defmodule Player.Crawler do
   @behaviour WikiRace.Crawler
 
   @impl WikiRace.Crawler
-  def start(_start_url, _target_url) do
-    raise "TODO: implement WikiRace.Crawler.start/2"
+  def start(inicio, objetivo) do
+    case Process.whereis(Player.Search) do
+      nil -> :ok
+      pid -> parar(pid)
+    end
+
+    DynamicSupervisor.start_child(Player.RaceSupervisor, {Player.Search, {inicio, objetivo}})
   end
 
   @impl WikiRace.Crawler
   def status(_pid) do
-    raise "TODO: implement WikiRace.Crawler.status/1"
+    Player.Search.status()
+  end
+
+  defp parar(pid) do
+    ref = Process.monitor(pid)
+    Process.exit(pid, :kill)
+
+    receive do
+      {:DOWN, ^ref, :process, _, _} -> :ok
+    end
   end
 end
