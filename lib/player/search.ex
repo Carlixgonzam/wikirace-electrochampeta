@@ -52,6 +52,8 @@ defmodule Player.Search do
       pendientes: 1,
       vistos: %{clave => true},
       libres: [],
+      turnos: System.schedulers_online(),
+      fila: [],
       visitados: 0,
       listo: clave == carrera.objetivo
     }
@@ -67,8 +69,27 @@ defmodule Player.Search do
 
   def handle_info(:empezar, estado) do
     yo = self()
-    Enum.each(1..@trabajadores, fn _ -> spawn_link(fn -> trabajar(yo, estado.carrera) end) end)
+    carrera = Map.put(estado.carrera, :coordinador, yo)
+    Enum.each(1..@trabajadores, fn _ -> spawn_link(fn -> trabajar(yo, carrera) end) end)
     {:noreply, estado}
+  end
+
+  def handle_info({:turno, pid}, %{turnos: 0} = estado) do
+    {:noreply, %{estado | fila: estado.fila ++ [pid]}}
+  end
+
+  def handle_info({:turno, pid}, estado) do
+    send(pid, :turno)
+    {:noreply, %{estado | turnos: estado.turnos - 1}}
+  end
+
+  def handle_info(:soltar, %{fila: [pid | fila]} = estado) do
+    send(pid, :turno)
+    {:noreply, %{estado | fila: fila}}
+  end
+
+  def handle_info(:soltar, estado) do
+    {:noreply, %{estado | turnos: estado.turnos + 1}}
   end
 
   def handle_info({:pedir, pid}, %{listo: true} = estado) do
@@ -150,7 +171,7 @@ defmodule Player.Search do
 
     receive do
       {:pagina, camino} ->
-        send(coordinador, visitar(camino, carrera))
+        send(coordinador, visitar_aparte(camino, carrera))
         trabajar(coordinador, carrera)
 
       :parar ->
@@ -158,10 +179,19 @@ defmodule Player.Search do
     end
   end
 
+  defp visitar_aparte(camino, carrera) do
+    yo = self()
+    pid = spawn_link(fn -> send(yo, {self(), visitar(camino, carrera)}) end)
+
+    receive do
+      {^pid, resultado} -> resultado
+    end
+  end
+
   defp visitar([url | _] = camino, carrera) do
     case Links.descargar(url) do
       {:ok, html} ->
-        links = Links.extraer(html, url, carrera.prefijo)
+        links = parsear(html, url, carrera)
 
         case Enum.find(links, fn {clave, _} -> clave == carrera.objetivo end) do
           nil -> {:links, camino, links}
@@ -171,5 +201,17 @@ defmodule Player.Search do
       :error ->
         :error
     end
+  end
+
+  defp parsear(html, url, carrera) do
+    send(carrera.coordinador, {:turno, self()})
+
+    receive do
+      :turno -> :ok
+    end
+
+    links = Links.extraer(html, url, carrera.prefijo)
+    send(carrera.coordinador, :soltar)
+    links
   end
 end
