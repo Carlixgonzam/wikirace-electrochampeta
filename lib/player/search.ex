@@ -143,7 +143,12 @@ defmodule Player.Search do
   end
 
   defp juntar(estado, camino, links) do
-    vecinos = if length(camino) <= @profundidad, do: estado.vecinos, else: %{}
+    vecinos =
+      if length(camino) <= @profundidad do
+        estado.vecinos
+      else
+        %{}
+      end
 
     {alta, siguiente, vistos, nuevos} =
       Enum.reduce(
