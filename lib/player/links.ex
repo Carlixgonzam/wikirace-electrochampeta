@@ -44,7 +44,11 @@ defmodule Player.Links do
           []
 
         [_, _, _, _, _, _ | _] = partes ->
-          if Enum.take(partes, 5) == prefijo, do: [{clave, link}], else: []
+          if Enum.take(partes, 5) == prefijo do
+            [{clave, link}]
+          else
+            []
+          end
 
         _ ->
           []
