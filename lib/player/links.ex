@@ -1,25 +1,24 @@
 defmodule Player.Links do
-  def descargar(url) do
-    try do
-      case Req.get(url, receive_timeout: 3_000, connect_options: [timeout: 3_000], retry: false) do
-        {:ok, %Req.Response{status: 200, body: html}} when is_binary(html) -> {:ok, html}
-        _ -> :error
-      end
-    rescue
-      _ -> :error
+  def descargar(url, intentos \\ 3) do
+    case pedir(url) do
+      {:ok, html} ->
+        {:ok, html}
+
+      :error ->
+        if intentos > 1 do
+          descargar(url, intentos - 1)
+        else
+          :error
+        end
     end
   end
 
   def extraer(html, url, prefijo) do
-    case Floki.parse_document(html) do
-      {:ok, doc} ->
-        doc
-        |> Floki.attribute("a", "href")
-        |> Enum.flat_map(&resolver(&1, url, prefijo))
-
-      _ ->
-        []
-    end
+    ~r/<a\s(?:[^>]*?\s)?href="([^"]*)"/
+    |> Regex.scan(html, capture: :all_but_first)
+    |> List.flatten()
+    |> Enum.uniq()
+    |> Enum.flat_map(&resolver(String.replace(&1, "&amp;", "&"), url, prefijo))
   end
 
   def clave(url) do
@@ -30,6 +29,17 @@ defmodule Player.Links do
 
   def prefijo(url) do
     url |> clave() |> String.split("/") |> Enum.take(5)
+  end
+
+  defp pedir(url) do
+    try do
+      case Req.get(url, receive_timeout: 3_000, connect_options: [timeout: 3_000], retry: false) do
+        {:ok, %Req.Response{status: 200, body: html}} when is_binary(html) -> {:ok, html}
+        _ -> :error
+      end
+    rescue
+      _ -> :error
+    end
   end
 
   defp resolver("#" <> _, _url, _prefijo), do: []
