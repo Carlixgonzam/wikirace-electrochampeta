@@ -6,7 +6,7 @@ defmodule Player.Search do
   alias WikiRace.Status
 
   @tabla :race_status
-  @trabajadores 32
+  @trabajadores 16
   @profundidad 2
 
   def start_link({inicio, objetivo}) do
@@ -28,6 +28,7 @@ defmodule Player.Search do
   end
 
   def init({inicio, objetivo}) do
+    Process.flag(:trap_exit, true)
     :ets.new(@tabla, [:named_table, :set])
 
     :ets.insert(@tabla, [
@@ -56,8 +57,11 @@ defmodule Player.Search do
       pendientes: 1,
       vistos: %{clave => true},
       libres: [],
+      ocupados: %{},
       turnos: System.schedulers_online(),
       fila: [],
+      parseando: [],
+      lector: nil,
       visitados: 0,
       listo: clave == carrera.objetivo
     }
@@ -74,9 +78,9 @@ defmodule Player.Search do
   def handle_info(:empezar, estado) do
     yo = self()
     carrera = Map.put(estado.carrera, :coordinador, yo)
-    spawn_link(fn -> send(yo, {:vecinos, vecinos(carrera)}) end)
+    lector = spawn_link(fn -> send(yo, {:vecinos, vecinos(carrera)}) end)
     Enum.each(1..@trabajadores, fn _ -> spawn_link(fn -> trabajar(yo, carrera) end) end)
-    {:noreply, estado}
+    {:noreply, %{estado | carrera: carrera, lector: lector}}
   end
 
   def handle_info({:vecinos, vecinos}, estado) do
@@ -93,17 +97,47 @@ defmodule Player.Search do
   end
 
   def handle_info({:turno, pid}, estado) do
-    send(pid, :turno)
-    {:noreply, %{estado | turnos: estado.turnos - 1}}
+    {:noreply, dar_turno(%{estado | turnos: estado.turnos - 1}, pid)}
   end
 
-  def handle_info(:soltar, %{fila: [pid | fila]} = estado) do
-    send(pid, :turno)
-    {:noreply, %{estado | fila: fila}}
+  def handle_info({:soltar, pid}, estado) do
+    {:noreply, soltar(%{estado | parseando: List.delete(estado.parseando, pid)})}
   end
 
-  def handle_info(:soltar, estado) do
-    {:noreply, %{estado | turnos: estado.turnos + 1}}
+  def handle_info({:DOWN, _ref, :process, pid, _razon}, estado) do
+    if Enum.member?(estado.parseando, pid) do
+      {:noreply, soltar(%{estado | parseando: List.delete(estado.parseando, pid)})}
+    else
+      {:noreply, estado}
+    end
+  end
+
+  def handle_info({:EXIT, _pid, :normal}, estado), do: {:noreply, estado}
+
+  def handle_info({:EXIT, pid, _razon}, %{lector: pid, vecinos: nil} = estado) do
+    handle_info({:vecinos, %{}}, estado)
+  end
+
+  def handle_info({:EXIT, pid, _razon}, %{lector: pid} = estado), do: {:noreply, estado}
+
+  def handle_info({:EXIT, pid, _razon}, estado) do
+    yo = self()
+    spawn_link(fn -> trabajar(yo, estado.carrera) end)
+    estado = %{estado | libres: List.delete(estado.libres, pid)}
+
+    case Map.fetch(estado.ocupados, pid) do
+      {:ok, camino} ->
+        {:noreply,
+         repartir(%{
+           estado
+           | actual: [camino | estado.actual],
+             pendientes: estado.pendientes + 1,
+             ocupados: Map.delete(estado.ocupados, pid)
+         })}
+
+      :error ->
+        {:noreply, estado}
+    end
   end
 
   def handle_info({:pedir, pid}, %{listo: true} = estado) do
@@ -112,7 +146,12 @@ defmodule Player.Search do
   end
 
   def handle_info({:pedir, pid}, estado) do
-    {:noreply, repartir(%{estado | libres: [pid | estado.libres]})}
+    {:noreply,
+     repartir(%{
+       estado
+       | libres: [pid | estado.libres],
+         ocupados: Map.delete(estado.ocupados, pid)
+     })}
   end
 
   def handle_info({:links, camino, links}, %{listo: false, vecinos: nil} = estado) do
@@ -136,6 +175,18 @@ defmodule Player.Search do
     [{_, valor}] = :ets.lookup(@tabla, clave)
     valor
   end
+
+  defp dar_turno(estado, pid) do
+    send(pid, :turno)
+    Process.monitor(pid)
+    %{estado | parseando: [pid | estado.parseando]}
+  end
+
+  defp soltar(%{fila: [pid | fila]} = estado) do
+    dar_turno(%{estado | fila: fila}, pid)
+  end
+
+  defp soltar(estado), do: %{estado | turnos: estado.turnos + 1}
 
   defp terminar do
     Harness.report_exhausted()
@@ -212,7 +263,13 @@ defmodule Player.Search do
   defp dar(%{libres: [pid | libres]} = estado, [url | _] = camino) do
     send(pid, {:pagina, camino})
     :ets.insert(@tabla, {:actual, url})
-    %{estado | libres: libres, pendientes: estado.pendientes - 1}
+
+    %{
+      estado
+      | libres: libres,
+        pendientes: estado.pendientes - 1,
+        ocupados: Map.put(estado.ocupados, pid, camino)
+    }
   end
 
   defp vecinos(carrera) do
@@ -272,7 +329,7 @@ defmodule Player.Search do
     end
 
     links = Links.extraer(html, url, carrera.prefijo)
-    send(carrera.coordinador, :soltar)
+    send(carrera.coordinador, {:soltar, self()})
     links
   end
 end
