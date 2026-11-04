@@ -78,8 +78,8 @@ defmodule Player.Search do
   def handle_info(:empezar, estado) do
     yo = self()
     carrera = Map.put(estado.carrera, :coordinador, yo)
-    lector = spawn_link(fn -> send(yo, {:vecinos, vecinos(carrera)}) end)
-    Enum.each(1..@trabajadores, fn _ -> spawn_link(fn -> trabajar(yo, carrera) end) end)
+    {:ok, lector} = Task.start_link(fn -> send(yo, {:vecinos, vecinos(carrera)}) end)
+    Enum.each(1..@trabajadores, fn _ -> Task.start_link(fn -> trabajar(yo, carrera) end) end)
     {:noreply, %{estado | carrera: carrera, lector: lector}}
   end
 
@@ -122,7 +122,7 @@ defmodule Player.Search do
 
   def handle_info({:EXIT, pid, _razon}, estado) do
     yo = self()
-    spawn_link(fn -> trabajar(yo, estado.carrera) end)
+    Task.start_link(fn -> trabajar(yo, estado.carrera) end)
     estado = %{estado | libres: List.delete(estado.libres, pid)}
 
     case Map.fetch(estado.ocupados, pid) do
@@ -164,9 +164,10 @@ defmodule Player.Search do
 
   def handle_info({:encontrado, camino}, %{listo: false} = estado) do
     Harness.report(camino)
-    :ets.insert(@tabla, [{:camino, camino}, {:estado, :found}])
+    visitados = estado.visitados + 1
+    :ets.insert(@tabla, [{:camino, camino}, {:visitados, visitados}, {:estado, :found}])
     Enum.each(estado.libres, &send(&1, :parar))
-    {:noreply, %{estado | listo: true, libres: []}}
+    {:noreply, %{estado | listo: true, libres: [], visitados: visitados}}
   end
 
   def handle_info(_mensaje, estado), do: {:noreply, estado}
