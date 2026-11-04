@@ -5,10 +5,11 @@ defmodule Player.Links do
         {:ok, html}
 
       :no_existe ->
-        :error
+        :no_existe
 
       :error ->
         if intentos > 1 do
+          esperar()
           descargar(url, intentos - 1)
         else
           :error
@@ -35,6 +36,13 @@ defmodule Player.Links do
   def prefijo(url) do
     base = url |> clave() |> String.split("/") |> Enum.take(5) |> Enum.join("/")
     base <> "/"
+  end
+
+  defp esperar do
+    receive do
+    after
+      200 -> :ok
+    end
   end
 
   defp pedir(url) do

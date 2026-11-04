@@ -7,7 +7,7 @@ defmodule Player.Search do
 
   @tabla :race_status
   @trabajadores 16
-  @profundidad 2
+  @profundidad 50
 
   def start_link({inicio, objetivo}) do
     GenServer.start_link(__MODULE__, {inicio, objetivo}, name: __MODULE__)
@@ -170,6 +170,11 @@ defmodule Player.Search do
     {:noreply, %{estado | listo: true, libres: [], visitados: visitados}}
   end
 
+  def handle_info({:fallo, camino}, %{listo: false} = estado) do
+    {:noreply,
+     %{estado | siguiente: [camino | estado.siguiente], pendientes: estado.pendientes + 1}}
+  end
+
   def handle_info(_mensaje, estado), do: {:noreply, estado}
 
   defp leer(clave) do
@@ -280,7 +285,7 @@ defmodule Player.Search do
         |> parsear(carrera.url_objetivo, carrera)
         |> Enum.reduce(%{}, fn {clave, _}, vecinos -> Map.put(vecinos, clave, true) end)
 
-      :error ->
+      _ ->
         %{}
     end
   end
@@ -317,8 +322,11 @@ defmodule Player.Search do
           _ -> {:encontrado, Enum.reverse([carrera.url_objetivo | camino])}
         end
 
+      :no_existe ->
+        :no_existe
+
       :error ->
-        :error
+        {:fallo, camino}
     end
   end
 
