@@ -6,8 +6,11 @@ defmodule Player.Search do
   alias WikiRace.Status
 
   @tabla :race_status
+  @vistos :race_vistos
+  @padres :race_padres
   @trabajadores 16
-  @profundidad 50
+  @profundidad 25
+  @frontera_max 250_000
 
   def start_link({inicio, objetivo}) do
     GenServer.start_link(__MODULE__, {inicio, objetivo}, name: __MODULE__)
@@ -30,6 +33,8 @@ defmodule Player.Search do
   def init({inicio, objetivo}) do
     Process.flag(:trap_exit, true)
     :ets.new(@tabla, [:named_table, :set])
+    :ets.new(@vistos, [:named_table, :set, :public])
+    :ets.new(@padres, [:named_table, :set, :public])
 
     :ets.insert(@tabla, [
       {:estado, :running},
@@ -40,6 +45,8 @@ defmodule Player.Search do
     ])
 
     clave = Links.clave(inicio)
+    :ets.insert(@vistos, {clave, true})
+    :ets.insert(@padres, {clave, {nil, inicio}})
 
     carrera = %{
       objetivo: Links.clave(objetivo),
@@ -50,12 +57,11 @@ defmodule Player.Search do
     estado = %{
       carrera: carrera,
       alta: [],
-      actual: [[inicio]],
+      actual: [clave],
       siguiente: [],
       vecinos: nil,
       espera: [],
       pendientes: 1,
-      vistos: %{clave => true},
       libres: [],
       ocupados: %{},
       turnos: System.schedulers_online(),
@@ -86,7 +92,7 @@ defmodule Player.Search do
   def handle_info({:vecinos, vecinos}, estado) do
     estado =
       Enum.reduce(Enum.reverse(estado.espera), %{estado | vecinos: vecinos, espera: []}, fn
-        {camino, links}, estado -> juntar(estado, camino, links)
+        {clave, links}, estado -> juntar(estado, clave, links)
       end)
 
     {:noreply, repartir(estado)}
@@ -126,11 +132,11 @@ defmodule Player.Search do
     estado = %{estado | libres: List.delete(estado.libres, pid)}
 
     case Map.fetch(estado.ocupados, pid) do
-      {:ok, camino} ->
+      {:ok, clave} ->
         {:noreply,
          repartir(%{
            estado
-           | actual: [camino | estado.actual],
+           | actual: [clave | estado.actual],
              pendientes: estado.pendientes + 1,
              ocupados: Map.delete(estado.ocupados, pid)
          })}
@@ -154,15 +160,16 @@ defmodule Player.Search do
      })}
   end
 
-  def handle_info({:links, camino, links}, %{listo: false, vecinos: nil} = estado) do
-    {:noreply, %{estado | espera: [{camino, links} | estado.espera]}}
+  def handle_info({:links, clave, links}, %{listo: false, vecinos: nil} = estado) do
+    {:noreply, %{estado | espera: [{clave, links} | estado.espera]}}
   end
 
-  def handle_info({:links, camino, links}, %{listo: false} = estado) do
-    {:noreply, juntar(estado, camino, links)}
+  def handle_info({:links, clave, links}, %{listo: false} = estado) do
+    {:noreply, juntar(estado, clave, links)}
   end
 
-  def handle_info({:encontrado, camino}, %{listo: false} = estado) do
+  def handle_info({:encontrado, clave}, %{listo: false} = estado) do
+    camino = reconstruir(clave) ++ [estado.carrera.url_objetivo]
     Harness.report(camino)
     visitados = estado.visitados + 1
     :ets.insert(@tabla, [{:camino, camino}, {:visitados, visitados}, {:estado, :found}])
@@ -170,9 +177,9 @@ defmodule Player.Search do
     {:noreply, %{estado | listo: true, libres: [], visitados: visitados}}
   end
 
-  def handle_info({:fallo, camino}, %{listo: false} = estado) do
+  def handle_info({:fallo, clave}, %{listo: false} = estado) do
     {:noreply,
-     %{estado | siguiente: [camino | estado.siguiente], pendientes: estado.pendientes + 1}}
+     %{estado | siguiente: [clave | estado.siguiente], pendientes: estado.pendientes + 1}}
   end
 
   def handle_info(_mensaje, estado), do: {:noreply, estado}
@@ -199,26 +206,23 @@ defmodule Player.Search do
     :ets.insert(@tabla, {:estado, :exhausted})
   end
 
-  defp juntar(estado, camino, links) do
+  defp juntar(estado, padre, links) do
     vecinos =
-      if length(camino) <= @profundidad do
+      if profundidad(padre) < @profundidad do
         estado.vecinos
       else
         %{}
       end
 
-    {alta, siguiente, vistos, nuevos} =
-      Enum.reduce(
-        links,
-        {[], estado.siguiente, estado.vistos, 0},
-        &agregar(&1, &2, camino, vecinos)
-      )
+    espacio = @frontera_max - :ets.info(@vistos, :size)
+
+    {alta, siguiente, nuevos, _espacio} =
+      Enum.reduce(links, {[], estado.siguiente, 0, espacio}, &agregar(&1, &2, padre, vecinos))
 
     estado = %{
       estado
       | alta: estado.alta ++ alta,
         siguiente: siguiente,
-        vistos: vistos,
         pendientes: estado.pendientes + nuevos,
         visitados: estado.visitados + 1
     }
@@ -227,23 +231,30 @@ defmodule Player.Search do
     estado
   end
 
-  defp agregar({clave, url}, {alta, siguiente, vistos, n}, camino, vecinos) do
-    cond do
-      Map.has_key?(vistos, clave) ->
-        {alta, siguiente, vistos, n}
+  defp agregar(_link, {alta, siguiente, n, 0}, _padre, _vecinos) do
+    {alta, siguiente, n, 0}
+  end
 
-      Map.has_key?(vecinos, clave) ->
-        {[[url | camino] | alta], siguiente, Map.put(vistos, clave, true), n + 1}
-
+  defp agregar({clave, url}, {alta, siguiente, n, espacio}, padre, vecinos) do
+    case :ets.insert_new(@vistos, {clave, true}) do
       true ->
-        {alta, [[url | camino] | siguiente], Map.put(vistos, clave, true), n + 1}
+        :ets.insert(@padres, {clave, {padre, url}})
+
+        if Map.has_key?(vecinos, clave) do
+          {[clave | alta], siguiente, n + 1, espacio - 1}
+        else
+          {alta, [clave | siguiente], n + 1, espacio - 1}
+        end
+
+      false ->
+        {alta, siguiente, n, espacio}
     end
   end
 
   defp repartir(%{libres: []} = estado), do: estado
 
-  defp repartir(%{alta: [camino | resto]} = estado) do
-    repartir(dar(%{estado | alta: resto}, camino))
+  defp repartir(%{alta: [clave | resto]} = estado) do
+    repartir(dar(%{estado | alta: resto}, clave))
   end
 
   defp repartir(%{vecinos: nil, actual: []} = estado), do: estado
@@ -262,19 +273,20 @@ defmodule Player.Search do
     repartir(%{estado | actual: estado.siguiente, siguiente: []})
   end
 
-  defp repartir(%{actual: [camino | resto]} = estado) do
-    repartir(dar(%{estado | actual: resto}, camino))
+  defp repartir(%{actual: [clave | resto]} = estado) do
+    repartir(dar(%{estado | actual: resto}, clave))
   end
 
-  defp dar(%{libres: [pid | libres]} = estado, [url | _] = camino) do
-    send(pid, {:pagina, camino})
+  defp dar(%{libres: [pid | libres]} = estado, clave) do
+    [{^clave, {_padre, url}}] = :ets.lookup(@padres, clave)
+    send(pid, {:pagina, clave})
     :ets.insert(@tabla, {:actual, url})
 
     %{
       estado
       | libres: libres,
         pendientes: estado.pendientes - 1,
-        ocupados: Map.put(estado.ocupados, pid, camino)
+        ocupados: Map.put(estado.ocupados, pid, clave)
     }
   end
 
@@ -294,8 +306,8 @@ defmodule Player.Search do
     send(coordinador, {:pedir, self()})
 
     receive do
-      {:pagina, camino} ->
-        send(coordinador, visitar_aparte(camino, carrera))
+      {:pagina, clave} ->
+        send(coordinador, visitar_aparte(clave, carrera))
         trabajar(coordinador, carrera)
 
       :parar ->
@@ -303,30 +315,40 @@ defmodule Player.Search do
     end
   end
 
-  defp visitar_aparte(camino, carrera) do
+  defp visitar_aparte(clave, carrera) do
     yo = self()
-    pid = spawn_link(fn -> send(yo, {self(), visitar(camino, carrera)}) end)
+    pid = spawn_link(fn -> send(yo, {self(), visitar(clave, carrera)}) end)
 
     receive do
       {^pid, resultado} -> resultado
     end
   end
 
-  defp visitar([url | _] = camino, carrera) do
-    case Links.descargar(url) do
-      {:ok, html} ->
-        links = parsear(html, url, carrera)
+  defp visitar(clave, carrera) do
+    case :ets.lookup(@padres, clave) do
+      [{^clave, {_padre, url}}] ->
+        case Links.descargar(url) do
+          {:ok, html} ->
+            links = parsear(html, url, carrera)
 
-        case Enum.find(links, fn {clave, _} -> clave == carrera.objetivo end) do
-          nil -> {:links, camino, links}
-          _ -> {:encontrado, Enum.reverse([carrera.url_objetivo | camino])}
+            case Enum.find(links, fn {c, _} -> c == carrera.objetivo end) do
+              nil ->
+                links = Enum.reject(links, fn {c, _} -> :ets.member(@vistos, c) end)
+                {:links, clave, links}
+
+              _ ->
+                {:encontrado, clave}
+            end
+
+          :no_existe ->
+            :no_existe
+
+          :error ->
+            {:fallo, clave}
         end
 
-      :no_existe ->
+      [] ->
         :no_existe
-
-      :error ->
-        {:fallo, camino}
     end
   end
 
@@ -340,5 +362,27 @@ defmodule Player.Search do
     links = Links.extraer(html, url, carrera.prefijo)
     send(carrera.coordinador, {:soltar, self()})
     links
+  end
+
+  defp reconstruir(clave), do: recorrer(clave, [])
+
+  defp recorrer(clave, urls) do
+    case :ets.lookup(@padres, clave) do
+      [{^clave, {nil, url}}] -> [url | urls]
+      [{^clave, {padre, url}}] -> recorrer(padre, [url | urls])
+      [] -> urls
+    end
+  end
+
+  defp profundidad(clave), do: prof(clave, 0)
+
+  defp prof(_clave, n) when n >= @profundidad, do: n
+
+  defp prof(clave, n) do
+    case :ets.lookup(@padres, clave) do
+      [{^clave, {nil, _url}}] -> n
+      [{^clave, {padre, _url}}] -> prof(padre, n + 1)
+      [] -> n
+    end
   end
 end
