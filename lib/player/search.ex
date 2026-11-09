@@ -6,8 +6,9 @@ defmodule Player.Search do
   alias WikiRace.Status
 
   @tabla :race_status
-  @trabajadores 16
-  @profundidad 50
+  @trabajadores 8
+  @profundidad 12
+  @frontera_max 250_000
 
   def start_link({inicio, objetivo}) do
     GenServer.start_link(__MODULE__, {inicio, objetivo}, name: __MODULE__)
@@ -207,10 +208,12 @@ defmodule Player.Search do
         %{}
       end
 
+    espacio = @frontera_max - :ets.info(@vistos, :size)
+
     {alta, siguiente, vistos, nuevos} =
       Enum.reduce(
         links,
-        {[], estado.siguiente, estado.vistos, 0},
+        {[], estado.siguiente, estado.vistos, 0, espacio},
         &agregar(&1, &2, camino, vecinos)
       )
 
