@@ -6,9 +6,9 @@ defmodule Player.Search do
   alias WikiRace.Status
 
   @tabla :race_status
-  @trabajadores 8
-  @profundidad 12
-  @frontera_max 250_000
+  @trabajadores 16
+  @profundidad 50
+  @frontera_max 50_000
 
   def start_link({inicio, objetivo}) do
     GenServer.start_link(__MODULE__, {inicio, objetivo}, name: __MODULE__)
@@ -64,6 +64,7 @@ defmodule Player.Search do
       parseando: [],
       lector: nil,
       visitados: 0,
+      lleno: false,
       listo: clave == carrera.objetivo
     }
 
@@ -208,9 +209,9 @@ defmodule Player.Search do
         %{}
       end
 
-    espacio = @frontera_max - :ets.info(@vistos, :size)
+    espacio = max(@frontera_max - estado.pendientes, 0)
 
-    {alta, siguiente, vistos, nuevos} =
+    {alta, siguiente, vistos, nuevos, restante} =
       Enum.reduce(
         links,
         {[], estado.siguiente, estado.vistos, 0, espacio},
@@ -223,23 +224,27 @@ defmodule Player.Search do
         siguiente: siguiente,
         vistos: vistos,
         pendientes: estado.pendientes + nuevos,
-        visitados: estado.visitados + 1
+        visitados: estado.visitados + 1,
+        lleno: estado.lleno or restante == 0
     }
 
     :ets.insert(@tabla, [{:visitados, estado.visitados}, {:frontera, estado.pendientes}])
     estado
   end
 
-  defp agregar({clave, url}, {alta, siguiente, vistos, n}, camino, vecinos) do
+  defp agregar({clave, url}, {alta, siguiente, vistos, n, espacio}, camino, vecinos) do
     cond do
       Map.has_key?(vistos, clave) ->
-        {alta, siguiente, vistos, n}
+        {alta, siguiente, vistos, n, espacio}
 
       Map.has_key?(vecinos, clave) ->
-        {[[url | camino] | alta], siguiente, Map.put(vistos, clave, true), n + 1}
+        {[[url | camino] | alta], siguiente, Map.put(vistos, clave, true), n + 1, espacio}
+
+      espacio > 0 ->
+        {alta, [[url | camino] | siguiente], Map.put(vistos, clave, true), n + 1, espacio - 1}
 
       true ->
-        {alta, [[url | camino] | siguiente], Map.put(vistos, clave, true), n + 1}
+        {alta, siguiente, vistos, n, espacio}
     end
   end
 
@@ -253,7 +258,7 @@ defmodule Player.Search do
 
   defp repartir(%{actual: [], siguiente: []} = estado) do
     if length(estado.libres) == @trabajadores do
-      terminar()
+      unless estado.lleno, do: terminar()
       Enum.each(estado.libres, &send(&1, :parar))
       %{estado | listo: true, libres: []}
     else
