@@ -1,5 +1,7 @@
 # Player
 
+**Grupo: Electrochampeta**
+
 This folder is your starting point. It is an OTP application that compiles,
 connects to the platform node, and declares the `WikiRace.Crawler` behavior,
 but has no crawler yet. `start/2` and `status/1` in `lib/player/crawler.ex`
